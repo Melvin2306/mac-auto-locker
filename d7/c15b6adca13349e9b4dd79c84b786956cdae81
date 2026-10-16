@@ -1,0 +1,53 @@
+Sources/WordLock/AppDelegate.swift
+  s_eb662341450fee::t_b49ba3975daa78 1-180,182-192
+  s_eb662341450fee::t_fb13ffd8a58ac7 181
+scripts/build.sh
+  s_eb662341450fee::t_e737acf824d092 1-51
+Sources/WordLock/ScreenLocker.swift
+  s_eb662341450fee::t_c5855cf50b1b6d 1-28
+Package.swift
+  s_eb662341450fee::t_d6f438ce993c42 1-12
+scripts/make-icon.swift
+  s_eb662341450fee::t_034ca3cbd8fbf5 16-20,22,24-26
+  s_eb662341450fee::t_e737acf824d092 1-15,21,23,27-30
+Sources/WordLockCore/TriggerMatcher.swift
+  s_eb662341450fee::t_04d811f99436f9 54
+  s_eb662341450fee::t_186fc4e2db9352 1-53,55-88
+VERSION
+  s_eb662341450fee::t_e737acf824d092 1
+Sources/WordLock/KeyMonitor.swift
+  s_eb662341450fee::t_6d1e1d9b80541f 1-135
+Tests/WordLockCoreTests/TriggerMatcherTests.swift
+  s_eb662341450fee::t_6351a652e16dbe 1-82
+Sources/WordLock/Preferences.swift
+  s_eb662341450fee::t_e20299da12c088 1-61
+scripts/install.sh
+  s_eb662341450fee::t_e737acf824d092 1-16
+Sources/WordLock/SettingsView.swift
+  s_eb662341450fee::t_fb13ffd8a58ac7 8,11,23-24,26,33,35,38,73,75,79,109,115,117-124
+  s_eb662341450fee::t_c7c13117ac0926 1-7,9-10,12-22,25,27-32,34,36-37,39-72,74,76-78,80-108,110-114,116,125-131
+.gitignore
+  s_eb662341450fee::t_d6f438ce993c42 1-5
+Resources/Info.plist
+  s_eb662341450fee::t_e737acf824d092 1-34
+README.md
+  s_eb662341450fee::t_5f19600e8bf1c1 1-68
+Sources/WordLock/main.swift
+  s_eb662341450fee::t_9ee8f88c8b98d5 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7c15b6adca13349e9b4dd79c84b786956cdae81",
+  "prompts": {},
+  "sessions": {
+    "s_eb662341450fee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3019a437-d53c-4432-816e-5e78e217493e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Melvin Rinkleff <melvin.rinkleff@gmx.de>"
+    }
+  }
+}
