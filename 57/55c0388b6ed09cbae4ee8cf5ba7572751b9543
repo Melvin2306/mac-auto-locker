@@ -1,0 +1,26 @@
+Sources/WordLock/Log.swift
+  s_eb662341450fee::t_4c2f90ae16b116 1-5
+Sources/WordLock/AppDelegate.swift
+  s_eb662341450fee::t_736567a315236b 17-25
+  s_eb662341450fee::t_4c2f90ae16b116 93,157-166
+Sources/WordLock/KeyMonitor.swift
+  s_eb662341450fee::t_4c2f90ae16b116 20-23,62-65,72,102,106-109,117,123-124
+Sources/WordLock/ScreenLocker.swift
+  s_eb662341450fee::t_4c2f90ae16b116 18-22,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5755c0388b6ed09cbae4ee8cf5ba7572751b9543",
+  "prompts": {},
+  "sessions": {
+    "s_eb662341450fee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3019a437-d53c-4432-816e-5e78e217493e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Melvin Rinkleff <melvin.rinkleff@gmx.de>"
+    }
+  }
+}
