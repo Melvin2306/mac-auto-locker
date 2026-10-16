@@ -14,6 +14,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastTrigger = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .filter { $0 != .current }
+        if !others.isEmpty {
+            log.info("Another WordLock instance is already running; quitting")
+            others.first?.activate()
+            NSApp.terminate(nil)
+            return
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
@@ -81,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Guard against double-firing from key repeat or a flurry of events.
         guard Date().timeIntervalSince(lastTrigger) > 2 else { return }
         lastTrigger = Date()
+        log.info("Trigger fired (test mode: \(self.preferences.testMode, privacy: .public))")
 
         if preferences.testMode {
             NSSound(named: "Glass")?.play()
@@ -144,6 +154,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let header = NSMenuItem(title: "WordLock: \(headline)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
+
+        let lastTrigger = monitor.lastTriggerDate.map {
+            DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .medium)
+        } ?? "never"
+        let diagnostics = NSMenuItem(
+            title: "Keys seen: \(monitor.keyEventsSeen) · Last trigger: \(lastTrigger)",
+            action: nil, keyEquivalent: ""
+        )
+        diagnostics.isEnabled = false
+        menu.addItem(diagnostics)
         menu.addItem(.separator())
 
         let toggle = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "e")

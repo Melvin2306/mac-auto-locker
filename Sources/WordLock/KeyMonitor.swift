@@ -17,6 +17,10 @@ final class KeyMonitor {
 
     var isRunning: Bool { tap != nil }
 
+    /// Counters shown in the menu to make problems diagnosable without logging what was typed.
+    private(set) var keyEventsSeen = 0
+    private(set) var lastTriggerDate: Date?
+
     init(trigger: String, caseSensitive: Bool) {
         matcher = TriggerMatcher(trigger: trigger, caseSensitive: caseSensitive)
     }
@@ -55,13 +59,17 @@ final class KeyMonitor {
             eventsOfInterest: mask,
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { return false }
+        ) else {
+            log.error("Event tap creation failed (input monitoring preflight: \(Self.hasPermission, privacy: .public))")
+            return false
+        }
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
         runLoopSource = source
+        log.info("Event tap started (input monitoring preflight: \(Self.hasPermission, privacy: .public))")
 
         appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -91,10 +99,14 @@ final class KeyMonitor {
     private func handle(type: CGEventType, event: CGEvent) {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            log.error("Event tap was disabled by the system (type \(type.rawValue, privacy: .public)); re-enabling")
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         case .keyDown:
-            break
+            keyEventsSeen += 1
+            if keyEventsSeen == 1 {
+                log.info("First key event received")
+            }
         default:
             // Mouse clicks can move the text cursor, so whatever was typed before no longer counts.
             _ = matcher.feed(.reset)
@@ -102,12 +114,14 @@ final class KeyMonitor {
         }
 
         // Ignore typing into WordLock's own windows (e.g. while setting the trigger word).
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+        if NSApp.isActive {
             _ = matcher.feed(.reset)
             return
         }
 
         if matcher.feed(Self.input(for: event)) {
+            lastTriggerDate = Date()
+            log.info("Trigger word matched")
             onTrigger?()
         }
     }

@@ -15,9 +15,13 @@ enum ScreenLocker {
 
     static func lock() {
         if let lockFunction {
-            _ = lockFunction()
-            return
+            let result = lockFunction()
+            log.info("SACLockScreenImmediate returned \(result, privacy: .public)")
+            if result == 0 { return }
+        } else {
+            log.error("SACLockScreenImmediate unavailable")
         }
+        log.info("Falling back to pmset displaysleepnow")
         // Locks only if "Require password after screen saver begins or display is turned off"
         // is set to "Immediately" (the macOS default).
         let process = Process()
