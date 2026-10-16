@@ -1,40 +1,42 @@
 import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 import WordLockCore
 
 /// Listens to system-wide key presses with a listen-only event tap and feeds them to a
 /// `TriggerMatcher`. Requires the Input Monitoring permission.
 ///
-/// Keystrokes typed into password fields are never delivered here: macOS enables Secure Event
+/// Keystrokes typed into password fields are never delivered here: macOS turns on Secure Event
 /// Input for those, which hides them from all event taps.
 final class KeyMonitor {
     var onTrigger: (() -> Void)?
 
-    private(set) var matcher: TriggerMatcher
+    private var matcher = TriggerMatcher()
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var appSwitchObserver: NSObjectProtocol?
-
-    var isRunning: Bool { tap != nil }
+    /// Reused for every key event so handling a keystroke doesn't allocate.
+    private var utf16 = [UniChar](repeating: 0, count: 4)
 
     /// Counters shown in the menu to make problems diagnosable without logging what was typed.
     private(set) var keyEventsSeen = 0
     private(set) var lastTriggerDate: Date?
 
-    init(trigger: String, caseSensitive: Bool) {
-        matcher = TriggerMatcher(trigger: trigger, caseSensitive: caseSensitive)
-    }
-
-    func update(trigger: String, caseSensitive: Bool) {
-        matcher.trigger = trigger
-        matcher.caseSensitive = caseSensitive
-    }
+    var isRunning: Bool { tap != nil }
+    var hasTriggers: Bool { !matcher.isEmpty }
 
     static var hasPermission: Bool { CGPreflightListenEventAccess() }
+
+    /// True while some app has Secure Event Input on, which hides every keystroke from event taps.
+    static var isSecureInputActive: Bool { IsSecureEventInputEnabled() }
 
     /// Shows the system prompt (first time only) and adds the app to the Input Monitoring list.
     static func requestPermission() {
         CGRequestListenEventAccess()
+    }
+
+    func configure(triggers: [String], caseSensitive: Bool) {
+        matcher.configure(triggers: triggers, caseSensitive: caseSensitive)
     }
 
     /// Returns false if the tap could not be created, which means permission is missing.
@@ -42,8 +44,8 @@ final class KeyMonitor {
     func start() -> Bool {
         guard tap == nil else { return true }
 
-        let mask: CGEventMask = [CGEventType.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-            .reduce(0) { $0 | (1 << $1.rawValue) }
+        // Key presses, plus left clicks because a click usually moves the text cursor.
+        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.leftMouseDown.rawValue)
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             if let refcon {
@@ -54,7 +56,7 @@ final class KeyMonitor {
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
+            place: .tailAppendEventTap,
             options: .listenOnly,
             eventsOfInterest: mask,
             callback: callback,
@@ -69,13 +71,13 @@ final class KeyMonitor {
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
         runLoopSource = source
-        log.info("Event tap started (input monitoring preflight: \(Self.hasPermission, privacy: .public))")
 
         appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            _ = self?.matcher.feed(.reset)
+            self?.matcher.reset()
         }
+        log.notice("Event tap started")
         return true
     }
 
@@ -98,52 +100,56 @@ final class KeyMonitor {
 
     private func handle(type: CGEventType, event: CGEvent) {
         switch type {
+        case .keyDown:
+            break
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             log.error("Event tap was disabled by the system (type \(type.rawValue, privacy: .public)); re-enabling")
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return
-        case .keyDown:
-            keyEventsSeen += 1
-            if keyEventsSeen == 1 {
-                log.info("First key event received")
-            }
-        default:
-            // Mouse clicks can move the text cursor, so whatever was typed before no longer counts.
-            _ = matcher.feed(.reset)
+        default: // mouse click
+            matcher.reset()
             return
         }
 
-        // Ignore typing into WordLock's own windows (e.g. while setting the trigger word).
-        if NSApp.isActive {
-            _ = matcher.feed(.reset)
+        keyEventsSeen += 1
+        if keyEventsSeen == 1 { log.notice("First key event received") }
+
+        // Ignore typing into WordLock's own windows (e.g. while adding a trigger word), and
+        // shortcuts, whose characters were never typed into a document.
+        if NSApp.isActive || !event.flags.isDisjoint(with: [.maskCommand, .maskControl]) {
+            matcher.reset()
             return
-        }
-
-        if matcher.feed(Self.input(for: event)) {
-            lastTriggerDate = Date()
-            log.info("Trigger word matched")
-            onTrigger?()
-        }
-    }
-
-    private static func input(for event: CGEvent) -> TriggerMatcher.Input {
-        if event.flags.contains(.maskCommand) || event.flags.contains(.maskControl) {
-            return .reset
         }
 
         switch event.getIntegerValueField(.keyboardEventKeycode) {
-        case 51: // delete (backspace)
-            return .backspace
-        case 53, 117, 115, 119, 116, 121, 123, 124, 125, 126: // esc, fwd delete, home, end, page up/down, arrows
-            return .reset
+        case Int64(kVK_Delete):
+            matcher.backspace()
+            return
+        case Int64(kVK_ForwardDelete), Int64(kVK_Escape), Int64(kVK_Home), Int64(kVK_End),
+             Int64(kVK_PageUp), Int64(kVK_PageDown), Int64(kVK_LeftArrow), Int64(kVK_RightArrow),
+             Int64(kVK_UpArrow), Int64(kVK_DownArrow):
+            matcher.reset()
+            return
         default:
             break
         }
 
         var length = 0
-        var buffer = [UniChar](repeating: 0, count: 8)
-        event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)
-        guard length > 0 else { return .text("") }
-        return .text(String(utf16CodeUnits: buffer, count: length))
+        event.keyboardGetUnicodeString(maxStringLength: utf16.count, actualStringLength: &length, unicodeString: &utf16)
+
+        var index = 0
+        while index < length {
+            var scalar = UInt32(utf16[index])
+            if UTF16.isLeadSurrogate(utf16[index]), index + 1 < length, UTF16.isTrailSurrogate(utf16[index + 1]) {
+                scalar = 0x10000 + ((scalar - 0xD800) << 10) + (UInt32(utf16[index + 1]) - 0xDC00)
+                index += 1
+            }
+            index += 1
+            if matcher.feed(scalar) {
+                lastTriggerDate = Date()
+                log.notice("Trigger word matched")
+                onTrigger?()
+            }
+        }
     }
 }

@@ -1,88 +1,101 @@
-import Foundation
-
-/// Keeps a short rolling buffer of recently typed characters and reports when
-/// the buffer ends with the trigger word.
+/// Detects when any of a set of trigger words has just been typed.
 ///
-/// The buffer lives only in memory, is capped to a small size, and is cleared
-/// whenever the trigger fires or the typing context changes (cursor moves,
-/// shortcuts, mouse clicks). Nothing typed is ever persisted.
+/// Recently typed characters live in a fixed-size ring buffer only as long as the longest trigger,
+/// so matching a keystroke never allocates. The buffer is in memory only, never persisted, and is
+/// cleared whenever a trigger fires or the typing context changes (cursor moves, shortcuts, clicks).
 public struct TriggerMatcher {
-    public enum Input: Equatable {
-        /// Characters produced by a key press.
-        case text(String)
-        /// The delete/backspace key.
-        case backspace
-        /// Something that invalidates the current typing context
-        /// (arrow keys, mouse clicks, keyboard shortcuts, app switches...).
-        case reset
+    public private(set) var caseSensitive = false
+    private var triggers: [[UInt32]] = []
+    private var ring: [UInt32] = []
+    private var head = 0 // next write position
+    private var count = 0 // valid characters before `head`
+
+    public init(triggers: [String] = [], caseSensitive: Bool = false) {
+        configure(triggers: triggers, caseSensitive: caseSensitive)
     }
 
-    public var trigger: String {
-        didSet { reset() }
+    /// Trimmed, non-empty, de-duplicated words, in their original order.
+    public static func normalize(_ words: [String]) -> [String] {
+        var seen = Set<String>()
+        return words
+            .map { $0.trimmingWhitespace() }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
-    public var caseSensitive: Bool {
-        didSet { reset() }
-    }
-
-    private var buffer: [Character] = []
-
-    public init(trigger: String, caseSensitive: Bool = false) {
-        self.trigger = trigger
+    public mutating func configure(triggers words: [String], caseSensitive: Bool) {
         self.caseSensitive = caseSensitive
+        triggers = Self.normalize(words).map { $0.unicodeScalars.map { fold($0.value) } }
+        ring = Array(repeating: 0, count: triggers.map(\.count).max() ?? 0)
+        head = 0
+        count = 0
     }
 
-    /// The trigger as it is compared: surrounding whitespace removed.
-    public var normalizedTrigger: String {
-        trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    public var isEmpty: Bool { triggers.isEmpty }
 
-    private var capacity: Int {
-        max(64, normalizedTrigger.count * 2)
-    }
-
-    /// Feeds one input event. Returns `true` when the trigger word was just completed.
-    public mutating func feed(_ input: Input) -> Bool {
-        switch input {
-        case .reset:
+    /// Feeds one typed Unicode scalar. Returns `true` when it completes a trigger word.
+    public mutating func feed(_ scalar: UInt32) -> Bool {
+        guard !ring.isEmpty else { return false }
+        // Control characters (return, tab, escape...) and AppKit's private-use function-key range
+        // (arrows, home, end...) end the current run of typing.
+        if scalar < 0x20 || scalar == 0x7F || (0xF700...0xF8FF).contains(scalar) {
             reset()
             return false
-        case .backspace:
-            if !buffer.isEmpty { buffer.removeLast() }
-            return false
-        case .text(let string):
-            if string.unicodeScalars.contains(where: Self.isFunctionKey) {
-                reset()
-                return false
-            }
-            buffer.append(contentsOf: string)
-            if buffer.count > capacity {
-                buffer.removeFirst(buffer.count - capacity)
-            }
-            if matches() {
-                reset()
-                return true
-            }
-            return false
         }
+        ring[head] = fold(scalar)
+        head = head + 1 == ring.count ? 0 : head + 1
+        if count < ring.count { count += 1 }
+
+        for trigger in triggers where trigger.count <= count && endsWith(trigger) {
+            reset()
+            return true
+        }
+        return false
+    }
+
+    /// Convenience for feeding a whole string. Returns `true` if any trigger was completed.
+    public mutating func feed(_ text: String) -> Bool {
+        var fired = false
+        for scalar in text.unicodeScalars where feed(scalar.value) {
+            fired = true
+        }
+        return fired
+    }
+
+    public mutating func backspace() {
+        guard count > 0 else { return }
+        head = head == 0 ? ring.count - 1 : head - 1
+        count -= 1
     }
 
     public mutating func reset() {
-        buffer.removeAll(keepingCapacity: true)
+        count = 0
     }
 
-    private func matches() -> Bool {
-        let target = normalizedTrigger
-        guard !target.isEmpty, buffer.count >= target.count else { return false }
-        let tail = String(buffer.suffix(target.count))
-        if caseSensitive {
-            return tail == target
+    private func endsWith(_ trigger: [UInt32]) -> Bool {
+        var index = head
+        for scalar in trigger.reversed() {
+            index = index == 0 ? ring.count - 1 : index - 1
+            if ring[index] != scalar { return false }
         }
-        return tail.compare(target, options: [.caseInsensitive]) == .orderedSame
+        return true
     }
 
-    /// AppKit reports arrow/function keys as characters in the private-use range U+F700–U+F8FF.
-    private static func isFunctionKey(_ scalar: Unicode.Scalar) -> Bool {
-        (0xF700...0xF8FF).contains(scalar.value)
+    private func fold(_ value: UInt32) -> UInt32 {
+        if caseSensitive { return value }
+        if value >= 0x41 && value <= 0x5A { return value + 0x20 } // ASCII fast path
+        if value < 0x80 { return value }
+        guard let scalar = Unicode.Scalar(value) else { return value }
+        let lower = scalar.properties.lowercaseMapping.unicodeScalars
+        return lower.count == 1 ? lower.first!.value : value
+    }
+}
+
+private extension String {
+    func trimmingWhitespace() -> String {
+        let scalars = unicodeScalars
+        guard let start = scalars.firstIndex(where: { !$0.properties.isWhitespace }),
+              let end = scalars.lastIndex(where: { !$0.properties.isWhitespace })
+        else { return "" }
+        return String(scalars[start...end])
     }
 }

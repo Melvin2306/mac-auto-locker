@@ -18,6 +18,7 @@ echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/WordLock"
+strip -x "$APP/Contents/MacOS/WordLock"
 sed "s/__VERSION__/$VERSION/g" Resources/Info.plist > "$APP/Contents/Info.plist"
 
 ICONSET="$BUILD/AppIcon.iconset"

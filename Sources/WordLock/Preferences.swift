@@ -1,12 +1,14 @@
 import Foundation
 import ServiceManagement
+import WordLockCore
 
 /// User-facing settings, persisted in UserDefaults.
-final class Preferences: ObservableObject {
+final class Preferences {
     static let shared = Preferences()
 
     private enum Key {
-        static let triggerWord = "triggerWord"
+        static let triggerWords = "triggerWords"
+        static let legacyTriggerWord = "triggerWord"
         static let caseSensitive = "caseSensitive"
         static let isEnabled = "isEnabled"
         static let testMode = "testMode"
@@ -14,44 +16,43 @@ final class Preferences: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
-    @Published var triggerWord: String {
-        didSet { defaults.set(triggerWord, forKey: Key.triggerWord) }
-    }
-
-    @Published var caseSensitive: Bool {
-        didSet { defaults.set(caseSensitive, forKey: Key.caseSensitive) }
-    }
-
-    @Published var isEnabled: Bool {
-        didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
-    }
-
-    /// When on, typing the trigger plays a sound and flashes the menu bar icon instead of locking.
-    @Published var testMode: Bool {
-        didSet { defaults.set(testMode, forKey: Key.testMode) }
-    }
-
-    @Published private(set) var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
-
     private init() {
-        defaults.register(defaults: [
-            Key.triggerWord: "",
-            Key.caseSensitive: false,
-            Key.isEnabled: true,
-            Key.testMode: false,
-        ])
-        triggerWord = defaults.string(forKey: Key.triggerWord) ?? ""
-        caseSensitive = defaults.bool(forKey: Key.caseSensitive)
-        isEnabled = defaults.bool(forKey: Key.isEnabled)
-        testMode = defaults.bool(forKey: Key.testMode)
+        defaults.register(defaults: [Key.isEnabled: true])
+        // Migrate the single word stored by version 0.1.
+        if let legacy = defaults.string(forKey: Key.legacyTriggerWord) {
+            if defaults.stringArray(forKey: Key.triggerWords) == nil {
+                triggerWords = [legacy]
+            }
+            defaults.removeObject(forKey: Key.legacyTriggerWord)
+        }
     }
 
-    var hasTrigger: Bool {
-        !triggerWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var triggerWords: [String] {
+        get { defaults.stringArray(forKey: Key.triggerWords) ?? [] }
+        set { defaults.set(TriggerMatcher.normalize(newValue), forKey: Key.triggerWords) }
+    }
+
+    var caseSensitive: Bool {
+        get { defaults.bool(forKey: Key.caseSensitive) }
+        set { defaults.set(newValue, forKey: Key.caseSensitive) }
+    }
+
+    var isEnabled: Bool {
+        get { defaults.bool(forKey: Key.isEnabled) }
+        set { defaults.set(newValue, forKey: Key.isEnabled) }
+    }
+
+    /// When on, typing a trigger plays a sound and flashes the menu bar icon instead of locking.
+    var testMode: Bool {
+        get { defaults.bool(forKey: Key.testMode) }
+        set { defaults.set(newValue, forKey: Key.testMode) }
+    }
+
+    var launchAtLogin: Bool {
+        SMAppService.mainApp.status == .enabled
     }
 
     func setLaunchAtLogin(_ enabled: Bool) throws {
-        defer { launchAtLogin = SMAppService.mainApp.status == .enabled }
         if enabled {
             try SMAppService.mainApp.register()
         } else {

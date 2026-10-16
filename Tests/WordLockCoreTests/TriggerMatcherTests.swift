@@ -1,82 +1,111 @@
 import Testing
 @testable import WordLockCore
 
+/// Feeds text one character at a time, like a keyboard would.
 private func type(_ text: String, into matcher: inout TriggerMatcher) -> Bool {
     var fired = false
-    for character in text {
-        if matcher.feed(.text(String(character))) { fired = true }
+    for character in text where matcher.feed(String(character)) {
+        fired = true
     }
     return fired
 }
 
 @Test func firesWhenTriggerIsTyped() {
-    var matcher = TriggerMatcher(trigger: "pineapple")
+    var matcher = TriggerMatcher(triggers: ["pineapple"])
     #expect(type("I like pineapple", into: &matcher))
 }
 
 @Test func doesNotFireOnPartialWord() {
-    var matcher = TriggerMatcher(trigger: "pineapple")
+    var matcher = TriggerMatcher(triggers: ["pineapple"])
     #expect(!type("pineappl", into: &matcher))
 }
 
+@Test func supportsMultipleTriggers() {
+    var matcher = TriggerMatcher(triggers: ["sushi", "pineapple", "go"])
+    #expect(type("i want sushi", into: &matcher))
+    #expect(type("pineapple", into: &matcher))
+    #expect(type("lets go", into: &matcher))
+    #expect(!type("pizza", into: &matcher))
+}
+
+@Test func shortTriggerMatchesInsideLongerBuffer() {
+    var matcher = TriggerMatcher(triggers: ["averyveryverylongword", "hi"])
+    #expect(type("xxxxxxxxxxxxxxxxxxxxxxxxxxxxhi", into: &matcher))
+}
+
 @Test func isCaseInsensitiveByDefault() {
-    var matcher = TriggerMatcher(trigger: "Pineapple")
+    var matcher = TriggerMatcher(triggers: ["Pineapple"])
     #expect(type("PINEAPPLE", into: &matcher))
 }
 
+@Test func foldsNonASCIICase() {
+    var matcher = TriggerMatcher(triggers: ["Äpfel"])
+    #expect(type("äPFEL", into: &matcher))
+}
+
 @Test func respectsCaseSensitivity() {
-    var matcher = TriggerMatcher(trigger: "Pineapple", caseSensitive: true)
+    var matcher = TriggerMatcher(triggers: ["Pineapple"], caseSensitive: true)
     #expect(!type("pineapple", into: &matcher))
     #expect(type("Pineapple", into: &matcher))
 }
 
 @Test func backspaceRemovesCharacters() {
-    var matcher = TriggerMatcher(trigger: "lockme")
+    var matcher = TriggerMatcher(triggers: ["lockme"])
     _ = type("lockmz", into: &matcher)
-    _ = matcher.feed(.backspace)
+    matcher.backspace()
     #expect(type("e", into: &matcher))
 }
 
 @Test func resetBreaksTheSequence() {
-    var matcher = TriggerMatcher(trigger: "lockme")
+    var matcher = TriggerMatcher(triggers: ["lockme"])
     _ = type("lock", into: &matcher)
-    _ = matcher.feed(.reset)
+    matcher.reset()
     #expect(!type("me", into: &matcher))
 }
 
-@Test func arrowKeysResetTheBuffer() {
-    var matcher = TriggerMatcher(trigger: "lockme")
+@Test func arrowKeysAndReturnResetTheBuffer() {
+    var matcher = TriggerMatcher(triggers: ["lockme"])
     _ = type("lock", into: &matcher)
-    _ = matcher.feed(.text("\u{F702}")) // left arrow
+    _ = matcher.feed(0xF702) // left arrow
+    #expect(!type("me", into: &matcher))
+    _ = type("lock", into: &matcher)
+    _ = matcher.feed(0x0D) // return
     #expect(!type("me", into: &matcher))
 }
 
 @Test func firesOnlyOncePerCompletion() {
-    var matcher = TriggerMatcher(trigger: "abc")
+    var matcher = TriggerMatcher(triggers: ["abc"])
     #expect(type("abc", into: &matcher))
     #expect(!type("bc", into: &matcher))
     #expect(type("abc", into: &matcher))
 }
 
-@Test func emptyOrWhitespaceTriggerNeverFires() {
-    var matcher = TriggerMatcher(trigger: "   ")
+@Test func emptyAndWhitespaceTriggersAreIgnored() {
+    var matcher = TriggerMatcher(triggers: ["   ", ""])
+    #expect(matcher.isEmpty)
     #expect(!type("   anything   ", into: &matcher))
 }
 
-@Test func triggerIsTrimmed() {
-    var matcher = TriggerMatcher(trigger: " lockme ")
+@Test func triggersAreTrimmedAndDeduplicated() {
+    #expect(TriggerMatcher.normalize([" sushi ", "sushi", "", "taco"]) == ["sushi", "taco"])
+    var matcher = TriggerMatcher(triggers: [" lockme "])
     #expect(type("lockme", into: &matcher))
 }
 
-@Test func longInputDoesNotGrowUnbounded() {
-    var matcher = TriggerMatcher(trigger: "lockme")
-    _ = type(String(repeating: "x", count: 10_000), into: &matcher)
+@Test func triggerMayContainSpaces() {
+    var matcher = TriggerMatcher(triggers: ["lock it"])
+    #expect(type("please lock it", into: &matcher))
+}
+
+@Test func longInputWrapsTheRingBuffer() {
+    var matcher = TriggerMatcher(triggers: ["lockme"])
+    _ = type(String(repeating: "x", count: 10_003), into: &matcher)
     #expect(type("lockme", into: &matcher))
 }
 
-@Test func changingTriggerClearsBuffer() {
-    var matcher = TriggerMatcher(trigger: "abc")
+@Test func reconfiguringClearsBuffer() {
+    var matcher = TriggerMatcher(triggers: ["abc"])
     _ = type("ab", into: &matcher)
-    matcher.trigger = "abcd"
+    matcher.configure(triggers: ["abcd"], caseSensitive: false)
     #expect(!type("cd", into: &matcher))
 }
