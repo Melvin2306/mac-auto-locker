@@ -1,0 +1,21 @@
+README.md
+  s_cbba8720c89d8c::t_ec10fad5b25e10 167-170
+LICENSE
+  s_cbba8720c89d8c::t_ec10fad5b25e10 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63b13afd0cce85c961efde4dbf9051d6bcae7d33",
+  "prompts": {},
+  "sessions": {
+    "s_cbba8720c89d8c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d5ce8270-e8ad-4fed-8263-6780ef631b41",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Melvin Rinkleff <melvin.rinkleff@gmx.de>"
+    }
+  }
+}
