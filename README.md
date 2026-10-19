@@ -164,3 +164,7 @@ Bump `VERSION`, build the DMG and attach it to a GitHub release:
 ./scripts/build.sh --dmg
 gh release create "v$(cat VERSION)" build/WordLock.dmg --title "WordLock $(cat VERSION)"
 ```
+
+## License
+
+[MIT](LICENSE)
